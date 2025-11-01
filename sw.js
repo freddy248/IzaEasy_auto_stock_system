@@ -1,31 +1,33 @@
 
-// Simple PWA service worker for GitHub Pages
-const CACHE_NAME = 'autospares-cache-v1';
-const CORE_ASSETS = [
-  './',
-  './index.html',
+const CACHE_NAME = 'autospares-cache-v3';
+const APP_SHELL = [
+  './auto_fixed.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/maskable-512.png',
   './icons/favicon.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(()=>self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => (k === CACHE_NAME) ? null : caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+    )).then(()=>self.clients.claim())
   );
 });
 
-// Network-first for HTML navigation, cache-first for others
+const CDN_HOSTS = [
+  'cdn.tailwindcss.com',
+  'cdn.jsdelivr.net',
+  'cdn.skypack.dev'
+];
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -33,31 +35,23 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET
   if (req.method !== 'GET') return;
 
-  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
-    // HTML: try network first, fallback to cache
+  // Cache-first for same-origin and whitelisted CDNs
+  if (url.origin === location.origin || CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(
-      fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
-        return res;
-      }).catch(() => caches.match('./index.html'))
+      caches.match(req).then(cached => {
+        if (cached) return cached;
+        return fetch(req).then(resp => {
+          const respClone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, respClone));
+          return resp;
+        }).catch(() => {
+          // Offline fallback: if HTML request, serve app shell
+          if (req.headers.get('accept')?.includes('text/html')) {
+            return caches.match('./auto_fixed.html');
+          }
+        });
+      })
     );
-    return;
   }
-
-  // For other requests: cache-first, fallback to network
-  event.respondWith(
-    caches.match(req).then(cached => cached || fetch(req).then(res => {
-      // optional: cache CDN assets too
-      const copy = res.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
-      return res;
-    }).catch(() => cached))
-  );
-});
-
-self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') {
-    self.skipWaiting();
-  }
+  // Otherwise, let it pass through
 });
