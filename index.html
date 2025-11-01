@@ -8,7 +8,6 @@
 <script src="https://cdn.tailwindcss.com"></script>
 
 <link href="manifest.json" rel="manifest"/>
-\1
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <link rel="apple-touch-icon" href="icons/icon-192.png"/>
@@ -260,6 +259,28 @@
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+
+<script>
+(function(){
+  const THEME_KEY = 'autospares-theme';
+  try {
+    const saved = localStorage.getItem(THEME_KEY) || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.classList.toggle('dark', saved === 'dark');
+    document.documentElement.setAttribute('data-theme', saved);
+    window.__setTheme = function(mode){
+      const m = (mode === 'dark') ? 'dark' : 'light';
+      localStorage.setItem(THEME_KEY, m);
+      document.documentElement.classList.toggle('dark', m === 'dark');
+      document.documentElement.setAttribute('data-theme', m);
+    };
+    window.__toggleTheme = function(){
+      const current = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      window.__setTheme(current === 'dark' ? 'light' : 'dark');
+    };
+  } catch(e){ /* ignore */ }
+})();
+</script>
 
 </head>
 
@@ -2373,5 +2394,85 @@ document.getElementById('waTargetPhone')?.addEventListener('input', (e)=>{
   e.target.value = v;
 });
 </script>
+
+<script>
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('[data-theme-toggle]');
+  if (!btn) return;
+  e.preventDefault();
+  if (typeof window.__toggleTheme === 'function') window.__toggleTheme();
+});
+</script>
+
+
+<script>
+(function(){
+  if (typeof window.updateShellVisibility === 'function') return; // don't double add
+  window.updateShellVisibility = function(){
+    try{
+      const authed = (typeof isAuthed==='function') ? isAuthed() : !!(sessionStorage && sessionStorage.getItem('auth'));
+      const hdr = document.querySelector('header');
+      const aside = document.querySelector('aside');
+      const kpis = document.getElementById('quickKpis');
+      if(hdr) hdr.classList.toggle('hidden', !authed);
+      if(aside) aside.classList.toggle('hidden', !authed);
+      if(kpis) kpis.classList.toggle('hidden', !authed);
+
+      if(!authed){
+        const pagesAll=['dashboard','pos','inventory','purchases','sales','suppliers','settings','cashup'];
+        pagesAll.forEach(p=>{
+          const el=document.getElementById('page-'+p);
+          if(el) el.classList.add('hidden');
+        });
+        const loginEl=document.getElementById('page-login');
+        if(loginEl) loginEl.classList.remove('hidden');
+      }
+    }catch(e){}
+  };
+
+  // Patch common hooks if found
+  const patch = (name, before, after)=>{
+    try{
+      const code = window[name];
+      if (typeof code === 'function') {
+        window[name] = function(){
+          if (before) try{before();}catch(e){}
+          const r = code.apply(this, arguments);
+          if (after) try{after();}catch(e){}
+          return r;
+        };
+      }
+    }catch(e){}
+  };
+
+  // Apply gate after show(), refreshAll(), lockToLogin()
+  patch('show', null, window.updateShellVisibility);
+  patch('refreshAll', window.updateShellVisibility, window.updateShellVisibility);
+  patch('lockToLogin', null, window.updateShellVisibility);
+
+  // On visibility regain, if not authed force login page and gate
+  document.addEventListener('visibilitychange', ()=>{
+    try{
+      if(document.visibilityState==='visible' && typeof isAuthed==='function' && !isAuthed()){
+        if (typeof lockToLogin==='function') lockToLogin();
+        window.updateShellVisibility();
+      }
+    }catch(e){}
+  });
+
+  // First run
+  document.addEventListener('DOMContentLoaded', window.updateShellVisibility);
+})();
+</script>
+
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+
 </body>
 </html>
