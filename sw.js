@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'autospares-cache-v3';
+const CACHE_NAME = 'autospares-cache-v4';
 const APP_SHELL = [
   './auto_fixed.html',
   './manifest.json',
@@ -31,21 +31,16 @@ const CDN_HOSTS = [
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
-
-  // Only handle GET
   if (req.method !== 'GET') return;
-
-  // Cache-first for same-origin and whitelisted CDNs
   if (url.origin === location.origin || CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(
       caches.match(req).then(cached => {
         if (cached) return cached;
         return fetch(req).then(resp => {
-          const respClone = resp.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, respClone));
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
           return resp;
         }).catch(() => {
-          // Offline fallback: if HTML request, serve app shell
           if (req.headers.get('accept')?.includes('text/html')) {
             return caches.match('./auto_fixed.html');
           }
@@ -53,5 +48,4 @@ self.addEventListener('fetch', (event) => {
       })
     );
   }
-  // Otherwise, let it pass through
 });
